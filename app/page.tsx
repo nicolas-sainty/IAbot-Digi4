@@ -17,14 +17,14 @@ export default function Home() {
   })
 
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">ù
+    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">
       {/* Logo F1 en arrière-plan */}
       <div className="absolute left-0 right-0 top-[45%] -translate-y-1/2 flex items-center justify-center pointer-events-none transition-all duration-300"> 
         <Image 
-          src="/Images/F1.svg.png" 
+          src="/Images/images.png" 
           alt="F1 Logo" 
-          width={400}
-          height={400}
+          width={200}
+          height={200}
           className="opacity-30 transition-transform duration-300"
           priority
         />
@@ -42,7 +42,7 @@ export default function Home() {
             <div className={`max-w-[80%] p-4 rounded-2xl ${
               message.role === 'user' 
                 ? 'bg-[#FF1E02] text-white rounded-tr-sm' 
-                : 'bg-[#F1F1F1] rounded-tl-sm'
+                : 'bg-[#F1F1F1] text-black rounded-tl-sm'
             }`}>
               <div className="whitespace-pre-wrap">
                 {message.content}
@@ -57,7 +57,7 @@ export default function Home() {
           <textarea 
             className="w-full py-4 px-6 pr-16 min-h-[110px] max-h-[75vh] overflow-y-hidden border-0 rounded-[24px] focus:outline-none focus:ring-0 bg-[#F1F1F1] resize-none"
             placeholder="Posez votre question ici..."
-            style={{ scrollbarWidth: 'auto', scrollbarColor: 'auto' }}
+            style={{ scrollbarWidth: 'auto', scrollbarColor: 'auto'}}
             value={input}
             onChange={handleInputChange}
             onKeyDown={(e) => {
