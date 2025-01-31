@@ -17,7 +17,7 @@ export default function Home() {
   })
 
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">ù
+    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">
       {/* Logo F1 en arrière-plan */}
       <div className="absolute left-0 right-0 top-[45%] -translate-y-1/2 flex items-center justify-center pointer-events-none transition-all duration-300"> 
         <Image 
