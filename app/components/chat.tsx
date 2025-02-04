@@ -1,59 +1,41 @@
 'use client';
 
-import { useChat } from "ai/react";
-import { ArrowUp } from "lucide-react";
-import Image from "next/image";
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import { ArrowUp } from "lucide-react";
 
-export interface Message {
+interface Message {
   id: string;
   content: string;
+  created_at: string;
   role: 'user' | 'assistant';
 }
 
-export default function Chat({
-  id,
-  initialMessages,
-  selectedModel
-}: {
-  id: string;
-  initialMessages: any[];
-  selectedModel: string;
-}) {
+interface ChatProps {
+  chatId: string;
+}
+
+const ChatPage = ({ chatId }: ChatProps) => {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(true);
 
-  const { messages, input, handleInputChange, handleSubmit } = useChat({
-    api: `/api/chat/${id}`,
-    initialMessages,
-    body: {
-      id,
-      model: selectedModel
-    }
-  });
-
   useEffect(() => {
-    console.log('Model sélectionné:', selectedModel);
-  }, [selectedModel]);
-
-  useEffect(() => {
-    const fetchMessages = async () => {
-      const response = await fetch(`/api/messages/${id}`);
-      const data = await response.json();
-      setInitialMessages(data.messages.map((msg: any) => ({
-        id: msg.id,
-        content: msg.content,
-        role: msg.role
-      })));
+    const getMessages = async () => {
+      const fetchedMessages = await fetchMessages(chatId);
+      setMessages(fetchedMessages);
       setIsLoading(false);
     };
-    fetchMessages();
-  }, [id]);
 
-  if (isLoading) return <div className="w-full text-center p-8">Chargement de l'historique...</div>;
+    getMessages();
+  }, [chatId]);
+
+  if (isLoading) {
+    return <div className="w-full text-center p-8">Chargement de l'historique...</div>;
+  }
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">
-      {/* Logo F1 en arrière-plan */}
       <div className="absolute left-0 right-0 top-[45%] -translate-y-1/2 flex items-center justify-center pointer-events-none transition-all duration-300">
         <Image
           src="/Images/F1.svg.png"
@@ -87,17 +69,17 @@ export default function Chat({
       </div>
 
       <div className="w-[665px] mb-[4vh]">
-        <form onSubmit={handleSubmit} className="relative">
+        <form className="relative">
           <textarea
             className="w-full py-4 px-6 pr-16 min-h-[110px] max-h-[75vh] overflow-y-hidden border-0 rounded-[24px] focus:outline-none focus:ring-0 bg-[#F1F1F1] resize-none"
             placeholder="Posez votre question ici..."
             style={{ scrollbarWidth: 'auto', scrollbarColor: 'auto' }}
             value={input}
-            onChange={handleInputChange}
+            onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                handleSubmit(e);
+                // handleSubmit function should be defined elsewhere
               }
             }}
           />
@@ -111,4 +93,6 @@ export default function Chat({
       </div>
     </main>
   );
-} 
+};
+
+export default ChatPage;
