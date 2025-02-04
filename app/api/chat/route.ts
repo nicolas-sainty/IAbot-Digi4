@@ -13,6 +13,9 @@ export async function POST(req: Request) {
       if (!chatId) {
         throw new Error("❌ Erreur: chatId est undefined !");
       }
+      if (!messages) {
+        throw new Error("❌ Erreur: messages est undefined !");
+      }
 
       // On récupère uniquement le dernier message de l'utilisateur
       const lastUserMessage = [...messages].reverse().find((m: Message) => m.role === 'user');
@@ -33,12 +36,14 @@ export async function POST(req: Request) {
           // Sauvegarde des messages une fois le stream terminé
           await createMessages(chatId, lastUserMessage.content as unknown as JSON, 'user');
           await createMessages(chatId, result.text as unknown as JSON, 'assistant');
+          console.log("result dans chat.route.ts", result);
         }
       });
+      console.log("result dans chat.route.ts", result);
 
       await result.mergeIntoDataStream(dataStream);
     },
-
+    
     // Gestion des erreurs pendant le streaming
     onError: (error) => error instanceof Error ? error.message : String(error),
   });

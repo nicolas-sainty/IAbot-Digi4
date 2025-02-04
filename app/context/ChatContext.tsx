@@ -1,3 +1,4 @@
+// Garde le contexte quand tu change de page
 'use client';
 
 import React, { createContext, useContext, useState, ReactNode } from 'react';
