@@ -16,10 +16,10 @@ export default function ChatPage() {
   })
 
   return (
-    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#FFF] relative">
+    <main className="flex min-h-screen w-full flex-col items-center justify-end bg-[#121212] text-white relative">
       <Link 
         href="/"
-        className="absolute top-4 left-4 flex items-center gap-2 text-gray-600 hover:text-gray-900"
+        className="absolute top-4 left-4 flex items-center gap-2 text-gray-400 hover:text-gray-200"
       >
         <ArrowLeft className="w-5 h-5" />
         Retour
@@ -30,8 +30,8 @@ export default function ChatPage() {
           key={message.id} 
           className={`w-full max-w-[665px] p-4 mb-4 rounded-lg ${
             message.role === 'user' 
-              ? 'bg-[#F1F1F1] ml-auto' 
-              : 'bg-[#FF1E02]/10'
+              ? 'bg-[#1E1E1E] ml-auto' 
+              : 'bg-[#FF1E02]/20'
           }`}
         >
           <div className="font-bold mb-2">
@@ -47,8 +47,8 @@ export default function ChatPage() {
         <div className="w-[665px] relative">
           <form onSubmit={handleSubmit}>
             <textarea 
-              className="w-full py-4 px-6 min-h-[110px] max-h-[75vh] overflow-y-hidden border-0 rounded-[24px] focus:outline-none focus:ring-0 bg-[#F1F1F1] resize-none"
-              placeholder="Posez votre question ici..."
+              className="w-full py-4 px-6 min-h-[110px] max-h-[75vh] overflow-y-hidden border-0 rounded-[24px] focus:outline-none focus:ring-0 bg-[#1E1E1E] text-black resize-none"
+              placeholder="Posez votre question sur la F1 ici..."
               value={input}
               onChange={handleInputChange}
               onKeyDown={(e) => {
@@ -59,8 +59,7 @@ export default function ChatPage() {
               }}
             />
             <button 
-              className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center"
-              style={{ backgroundColor: 'rgba(255, 30, 2, 0.5)' }}
+              className="absolute top-4 right-4 w-10 h-10 rounded-full flex items-center justify-center bg-[#FF1E02]/70 hover:bg-[#FF1E02]/90"
               type="submit"
             >
               <ArrowUp className="w-6 h-6 text-white" />
@@ -70,4 +69,4 @@ export default function ChatPage() {
       </div>
     </main>
   )
-} 
+}
