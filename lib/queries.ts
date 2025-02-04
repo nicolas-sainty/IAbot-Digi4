@@ -23,6 +23,7 @@ export async function createChat(title: string) {
 
 export async function getMessages(chatId: string) {
   const { data, error } = await supabase.from('message').select('*').eq('chat_id', chatId)
+  console.log("data dans getMessages queries", data)
   if (error) throw error
   return data
 }

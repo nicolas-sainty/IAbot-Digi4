@@ -3,35 +3,90 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ArrowUp } from "lucide-react";
-
-interface Message {
-  id: string;
-  content: string;
-  created_at: string;
-  role: 'user' | 'assistant';
-}
+import { Message, useChat } from 'ai/react';
+import { useRouter } from 'next/navigation';
+import { useChatContext } from '@/app/context/ChatContext';
 
 interface ChatProps {
-  chatId: string;
+  chatIdFromProps?: string | null;
+  url?: string;
+  initialMessages?: Message[];
 }
 
-const ChatPage = ({ chatId }: ChatProps) => {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
+const ChatPage = ({ chatIdFromProps = null, url = '/api/chat', initialMessages = [] }: ChatProps) => {
+  const router = useRouter();
+  const [chatId, setChatId] = useState<string | null>(chatIdFromProps);
   const [isLoading, setIsLoading] = useState(true);
+  const { pendingMessage, setPendingMessage } = useChatContext();
+  
+  console.log("chatId dans Chat.tsx", chatId)
+  console.log("initialMessages dans Chat.tsx", initialMessages)
 
   useEffect(() => {
-    const getMessages = async () => {
-      const fetchedMessages = await fetchMessages(chatId);
-      setMessages(fetchedMessages);
+    if (chatIdFromProps) {
+      setChatId(chatIdFromProps);
+    }
+  }, [chatIdFromProps]);
+
+  const { messages, input, handleInputChange, handleSubmit: handleChatSubmit } = useChat({
+    api: url,
+    id: chatId || undefined,
+    initialMessages: initialMessages,
+  });
+
+  useEffect(() => {
+    if (initialMessages.length > 0 || messages.length > 0 || chatId) {
       setIsLoading(false);
-    };
+    }
+    if (pendingMessage) {
+      handleChatSubmit({ preventDefault: () => {} });
+      setPendingMessage('');
+    }
+  }, [messages, chatId, pendingMessage, initialMessages]);
 
-    getMessages();
-  }, [chatId]);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!chatId && input.trim()) {
+      try {
+        // Extraire les premiers mots (maximum 5) pour le titre
+        const title = input.trim().split(/\s+/).slice(0, 5).join(' ');
+        
+        const newChat = await fetch('/api/chat/create', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ title }),
+        });
+        
+        if (!newChat.ok) {
+          throw new Error(`HTTP error! status: ${newChat.status}`);
+        }
+        const newChatData = await newChat.json();
+        console.log("newChatData dans Chat.tsx", newChatData);
+        const currentInput = input;
+        setPendingMessage(currentInput);
+        window.history.replaceState({}, '', `/chat/${newChatData.id}`);
+        setChatId(newChatData.id);
+      } catch (error) {
+        console.error("Erreur lors de la création du chat:", error);
+        return;
+      }
+    } else {
+      handleChatSubmit(e);
+    }
+  };
 
-  if (isLoading) {
-    return <div className="w-full text-center p-8">Chargement de l'historique...</div>;
+  if (isLoading && chatId) {
+    return (
+      <div className="w-full h-screen flex items-center justify-center">
+        <div className="text-center p-8">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#FF1E02] mx-auto mb-4"></div>
+          <div>Chargement de l'historique...</div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -69,17 +124,17 @@ const ChatPage = ({ chatId }: ChatProps) => {
       </div>
 
       <div className="w-[665px] mb-[4vh]">
-        <form className="relative">
+        <form onSubmit={handleSubmit} className="relative">
           <textarea
             className="w-full py-4 px-6 pr-16 min-h-[110px] max-h-[75vh] overflow-y-hidden border-0 rounded-[24px] focus:outline-none focus:ring-0 bg-[#F1F1F1] resize-none"
             placeholder="Posez votre question ici..."
             style={{ scrollbarWidth: 'auto', scrollbarColor: 'auto' }}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
-                // handleSubmit function should be defined elsewhere
+                handleSubmit(e);
               }
             }}
           />

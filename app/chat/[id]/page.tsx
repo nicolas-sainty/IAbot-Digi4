@@ -17,17 +17,42 @@ export default function ChatPage() {
 
   useEffect(() => {
     const fetchMessages = async () => {
-      const response = await fetch(`/api/messages/${id}`);
-      const data = await response.json();
-      setInitialMessages(data.messages.map((msg: any) => ({
-        id: msg.id,
-        content: msg.content,
-        role: msg.role
-      })));
-      setIsLoading(false);
+      try {
+        const response = await fetch(`/api/messages`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ id }),
+        });
+        const data = await response.json();
+        console.log("data dans ChatPage.tsx", data);
+        
+        // Vérification que data est un tableau avant de faire le mapping
+        if (Array.isArray(data)) {
+          setInitialMessages(data.map((msg: any) => ({
+            id: msg.chat_id || msg.id, // Fallback au cas où chat_id n'existe pas
+            content: msg.content,
+            role: msg.role
+          })));
+        } else if (data.messages && Array.isArray(data.messages)) {
+          setInitialMessages(data.messages.map((msg: any) => ({
+            id: msg.chat_id || msg.id,
+            content: msg.content,
+            role: msg.role
+          })));
+        }
+        setIsLoading(false);
+      } catch (error) {
+        console.error("Erreur lors de la récupération des messages:", error);
+        setIsLoading(false);
+      }
     };
-    fetchMessages();
+    
+    if (id) {
+      fetchMessages();
+    }
   }, [id]);
 
-  return <Chat id={id as string} initialMessages={initialMessages} />;
+  return <Chat chatIdFromProps={id as string} initialMessages={initialMessages} />;
 }

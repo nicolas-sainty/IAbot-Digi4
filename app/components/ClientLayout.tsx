@@ -2,6 +2,7 @@
 
 import { Menu, Plus } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 
 export default function ClientLayout({
   children,
@@ -10,6 +11,7 @@ export default function ClientLayout({
 }) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [chats, setChats] = useState([]);
+  const router = useRouter();
 
   useEffect(() => {
     const fetchChats = fetch('/api/chat/getAll')
@@ -34,7 +36,7 @@ export default function ClientLayout({
 
           {/* New Chat Button */}
           <div className="pt-[80px] px-4">
-            <button className="w-full flex items-center gap-2 rounded-xl border border-gray-200 p-3 hover:bg-gray-100 transition-colors">
+            <button className="w-full flex items-center gap-2 rounded-xl border border-gray-200 p-3 hover:bg-gray-100 transition-colors " onClick={() => router.push('/')}>
               <Plus className="w-4 h-4" />
               <span className="text-sm font-medium">Nouveau Chat</span>
             </button>
@@ -42,11 +44,12 @@ export default function ClientLayout({
 
           {/* Conversations List */}
           <div className="flex-1 overflow-y-auto mt-4">
-
-
-            {chats.map((chat: any) => (
+            {[...chats].reverse().map((chat: any) => (
               <div key={chat.id}>
-                <button className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-sm">
+                <button 
+                  onClick={() => router.push(`/chat/${chat.id}`)}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-gray-100 transition-colors text-sm"
+                >
                   {chat.title} 
                 </button>
               </div>
