@@ -7,44 +7,32 @@ import { NextResponse } from "next/server";
 // Gestion de la route API POST pour les conversations avec l'IA
 export async function POST(req: Request) {
   const { messages, id: chatId } = await req.json();
-  
-  return createDataStreamResponse({
-    async execute(dataStream) {
-      if (!chatId) {
-        throw new Error("❌ Erreur: chatId est undefined !");
-      }
-      if (!messages) {
-        throw new Error("❌ Erreur: messages est undefined !");
-      }
 
-      // On récupère uniquement le dernier message de l'utilisateur
-      const lastUserMessage = [...messages].reverse().find((m: Message) => m.role === 'user');
-      
-      if (!lastUserMessage) {
-        throw new Error("❌ Erreur: Aucun message utilisateur trouvé !");
-      }
+  if (!chatId) {
+    throw new Error("❌ Erreur: chatId est undefined !");
+  }
+  if (!messages) {
+    throw new Error("❌ Erreur: messages est undefined !");
+  }
 
-      dataStream.writeData({ chatId, chats: { id: chatId } });
-      console.log("✅ Chat ID et métadonnées envoyés au client:", { chatId, chats: { id: chatId } });
+  // On récupère uniquement le dernier message utilisateur
+  const lastUserMessage = [...messages].reverse().find((m: Message) => m.role === "user");
 
-      // Génération de la réponse IA
-      const result = await streamText({
-        model: openai("gpt-4o-mini"),
-        messages,
-        system: "Tu es un assistant pour la F1.",
-        onFinish: async (result) => {
-          // Sauvegarde des messages une fois le stream terminé
-          await createMessages(chatId, lastUserMessage.content as unknown as JSON, 'user');
-          await createMessages(chatId, result.text as unknown as JSON, 'assistant');
-          console.log("result dans chat.route.ts", result);
-        }
-      });
-      console.log("result dans chat.route.ts", result);
+  if (!lastUserMessage) {
+    throw new Error("❌ Erreur: Aucun message utilisateur trouvé !");
+  }
 
-      await result.mergeIntoDataStream(dataStream);
-    },
-    
-    // Gestion des erreurs pendant le streaming
-    onError: (error) => error instanceof Error ? error.message : String(error),
-  });
+  console.log("✅ Chat ID et métadonnées envoyés au client:", { chatId });
+
+  try {
+    // 🔹 **Sauvegarde le message utilisateur dans Supabase** 
+    await createMessages(chatId, lastUserMessage.content as unknown as JSON, "user");
+
+    // **Ne génère plus de réponse ici** → L'API Python ou Supabase gère cela.
+    return NextResponse.json({ chatId, status: "Message utilisateur enregistré" });
+  } catch (error) {
+    console.error("❌ Erreur lors de l'enregistrement du message utilisateur:", error);
+    return NextResponse.json({ error: error.message || "Erreur inconnue" }, { status: 500 });
+  }
 }
+

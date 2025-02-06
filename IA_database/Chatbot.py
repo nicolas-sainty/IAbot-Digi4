@@ -4,7 +4,6 @@ import numpy as np
 from typing import List
 import time
 
-
 from langchain_openai.embeddings import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
 from langchain_community.chat_models import ChatOpenAI
@@ -28,225 +27,161 @@ if not SUPABASE_URL or not SUPABASE_KEY or not OPENAI_API_KEY:
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 
-# ✅ Fonction pour récupérer les embeddings de Supabase
+# 🔹 Variable globale pour stocker les embeddings et éviter le double chargement
+vector_store = None
+
+# ✅ Fonction pour récupérer les embeddings de Supabase avec pagination
 def get_all_embeddings():
-    """
-    Récupère les embeddings stockés dans les tables races, drivers et results.
-    """
     all_embeddings = []
     all_texts = []
     all_metadata = []
+    batch_size = 500  # Limite de requête pour éviter le timeout
 
-    # Définir les colonnes spécifiques à chaque table
     tables = {
-        "races": ("id", "name"),  # "name" est le nom de la course
-        "drivers": ("driver_ref", "first_name", "last_name"),  # Concaténer first_name + last_name
-        "results": ("id", "driver_id")  # Utiliser driver_id pour identifier les résultats
+        "races": ("id", "name", "embedding"),
+        "drivers": ("driver_ref", "first_name", "last_name", "embedding"),
+        "results": ("id", "driver_id", "race_id", "position", "points", "embedding")
     }
 
     for table, columns in tables.items():
-        response = supabase.table(table).select(*columns, "embedding").execute()
+        offset = 0  # Pagination
 
-        if "error" in response and response["error"]:
-            raise Exception(f"Erreur Supabase ({table}) : {response['error']}")
+        while True:
+            print(f"🔄 Chargement des données depuis {table} (offset {offset})...")
 
-        if not response.data or len(response.data) == 0:
-            print(f"⚠️ Aucun embedding trouvé dans la table {table}.")
-            continue
+            response = supabase.table(table).select(*columns).range(offset, offset + batch_size - 1).execute()
+            if "error" in response and response["error"]:
+                raise Exception(f"❌ Erreur Supabase ({table}) : {response['error']}")
 
-        for row in response.data:
-            try:
-                embedding_vector = json.loads(row["embedding"]) if isinstance(row["embedding"], str) else row["embedding"]
-                all_embeddings.append(np.array(embedding_vector, dtype=np.float32))  # Convertir en array NumPy
-                
-                # Générer le texte associé à l'embedding
-                if table == "drivers":
-                    text_value = f"{row['first_name']} {row['last_name']}"  # Concatène prénom + nom
-                elif table == "results":
-                    text_value = f"Résultat pour le pilote {row['driver_id']}"  # Associe à un pilote
-                else:
-                    text_value = row[columns[1]]  # Prend la colonne "name" pour races
+            data = response.data
+            if not data:
+                print(f"✅ Fin de la récupération pour {table}. {len(all_embeddings)} embeddings chargés.")
+                break  # Plus de données, on arrête
 
-                all_texts.append(text_value)
-                all_metadata.append({"table": table, "id": row[columns[0]]})
-            except Exception as e:
-                print(f"⚠️ Problème avec une entrée de {table}: {e}")
+            for row in data:
+                try:
+                    embedding_vector = json.loads(row["embedding"]) if isinstance(row["embedding"], str) else row["embedding"]
+                    all_embeddings.append(np.array(embedding_vector, dtype=np.float32))
+
+                    text_value = row["name"] if table == "races" else f"{row['first_name']} {row['last_name']}" if table == "drivers" else f"Résultat: {row['driver_id']} - Position: {row['position']} - Points: {row['points']}"
+
+                    all_texts.append(text_value)
+                    all_metadata.append({"table": table, "id": row[columns[0]]})
+                except Exception as e:
+                    print(f"⚠️ Problème avec une entrée de {table}: {e}")
+
+            offset += batch_size
 
     print(f"✅ {len(all_embeddings)} embeddings récupérés depuis Supabase.")
     return all_embeddings, all_texts, all_metadata
 
-# ✅ Charger les embeddings dans Chroma
+# ✅ Charger les embeddings dans Chroma UNE SEULE FOIS
 def load_embeddings_into_chroma():
-    """
-    Charge les embeddings récupérés dans une base vectorielle Chroma.
-    """
-    embeddings, texts, metadata = get_all_embeddings()
+    global vector_store
 
+    if vector_store is not None:
+        print("✅ Les embeddings sont déjà chargés, pas de rechargement nécessaire.")
+        return vector_store
+
+    embeddings, texts, metadata = get_all_embeddings()
     if not embeddings:
         print("❌ Aucun embedding trouvé, arrêt du chargement.")
         return None
 
-    # Initialiser Chroma
-    vector_store = Chroma(
-        persist_directory="./chroma_db",
-        embedding_function=embeddings_model
-    )
-
-    # Ajouter les embeddings dans Chroma
-    vector_store.add_texts(
-        texts=texts,
-        metadatas=metadata,
-        embeddings=embeddings
-    )
+    vector_store = Chroma(persist_directory="./chroma_db", embedding_function=embeddings_model)
+    vector_store.add_texts(texts=texts, metadatas=metadata, embeddings=embeddings)
 
     print("✅ Embeddings chargés dans Chroma avec succès !")
     return vector_store
 
-# ✅ Créer le chatbot
+# ✅ Debug : Vérifier les collections dans ChromaDB
+def debug_chroma_collections():
+    global vector_store
+    if vector_store is None:
+        vector_store = load_embeddings_into_chroma()
+
+    collections = vector_store._client.list_collections()
+    print("✅ Collections disponibles dans ChromaDB :", collections)
+
+# ✅ Debug : Vérifier les résultats en course
+def debug_results_search():
+    print("🔍 Recherche des résultats de course dans ChromaDB...")
+    results = vector_store.similarity_search("Résultats de la saison 2019 en Formule 1", k=5)
+
+    if not results:
+        print("❌ Aucune donnée trouvée pour 'Résultats de F1 2019'.")
+    else:
+        for i, res in enumerate(results):
+            print(f"📜 Résultat {i+1}: {res.page_content} - Metadata: {res.metadata}")
+
+
+# ✅ Créer le chatbot LangChain
 def create_chatbot():
-    """
-    Crée un chatbot LangChain basé sur les embeddings stockés dans Supabase et chargés dans Chroma.
-    """
-    print("🔄 Chargement des embeddings depuis Supabase...")
+    global vector_store
     vector_store = load_embeddings_into_chroma()
 
-    if not vector_store:
-        raise Exception("❌ Impossible de charger les embeddings dans Chroma.")
-
-    print("✅ Chatbot prêt à l'emploi avec les embeddings récupérés !")
+    print("✅ Chatbot prêt à répondre !")
     return ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAI(temperature=0, model="gpt-3.5-turbo", openai_api_key=OPENAI_API_KEY),
         retriever=vector_store.as_retriever()
     )
 
-# ✅ Récupérer l'historique du chat depuis Supabase
-def get_chat_history(chat_id: str) -> List:
-    response = supabase.table("message").select("*").eq("chat_id", chat_id).order("id").execute()
-
-    if "error" in response and response["error"]:
-        raise Exception(f"Erreur Supabase : {response['error']}")
-
-    if not response.data or len(response.data) == 0:
-        print("Aucun message trouvé pour ce chat_id.")
-        return []
-
-    messages = response.data
-    history = []
-    for message in messages:
-        if message["role"] == "user":
-            history.append(HumanMessage(content=message["content"]))
-        elif message["role"] == "assistant":
-            history.append(AIMessage(content=message["content"]))
-
-    return history
-
 # ✅ Récupérer le dernier message utilisateur
-def get_last_user_message() -> dict:
-    response = supabase.table("message").select("*").eq("role", "user").order("id", desc=True).limit(1).execute()
+def get_last_user_message():
+    response = supabase.table("message").select("*").eq("role", "user").order("created_at", desc=True).limit(1).execute()
+    return response.data[0] if response.data else None
 
-    if hasattr(response, "error") and response.error:
-        raise Exception(f"Erreur Supabase : {response.error}")
-
-    if not response.data or len(response.data) == 0:
-        print("⚠️ Aucun message utilisateur trouvé.")
-        return None
-
-    return response.data[0]
-
-# ✅ Sauvegarder la réponse du chatbot
-def save_assistant_message(chat_id: str, content: str):
-    """
-    Sauvegarde une réponse de l'assistant dans la base de données.
-    """
-    response = supabase.table("message").insert({
-        "chat_id": chat_id,
-        "role": "assistant",
-        "content": content
-    }).execute()
-
-    if isinstance(response, dict) and "error" in response:
-        raise Exception(f"Erreur Supabase : {response['error']}")
-
-    if not response.data:
-        raise Exception("⚠️ L'insertion dans la table 'message' a échoué.")
-
-    print("✅ Réponse de l'assistant sauvegardée avec succès.")
-
-# ✅ Fonction principale
-import time
-
+# ✅ Fonction principale du chatbot
 def process_chat():
-    """
-    Boucle continue pour écouter et répondre aux messages des utilisateurs
-    uniquement lorsque le dernier message provient d'un utilisateur.
-    """
     print("💬 Chatbot en attente de messages... (tape 'exit' pour quitter)\n")
 
-    # Charger les embeddings UNE SEULE FOIS
-    print("🔄 Initialisation des embeddings...")
-    vector_store = load_embeddings_into_chroma()
-    if not vector_store:
-        print("❌ Impossible de charger les embeddings. Arrêt du chatbot.")
-        return
+    global vector_store
+    if vector_store is None:
+        vector_store = load_embeddings_into_chroma()
 
-    print("✅ Chatbot prêt à répondre !")
+    chatbot = create_chatbot()
 
-    chatbot = ConversationalRetrievalChain.from_llm(
-        llm=ChatOpenAI(temperature=0, model="gpt-3.5-turbo", openai_api_key=OPENAI_API_KEY),
-        retriever=vector_store.as_retriever()
-    )
-
-    last_processed_message_id = None  # Stocke l'ID du dernier message traité
+    last_processed_message_id = None
+    debug_chroma_collections()
+    debug_results_search()
 
     while True:
-        # Récupérer le dernier message utilisateur
         last_message = get_last_user_message()
-
-        # Vérifier si un message a été trouvé
         if not last_message:
             print("⚠️ Aucun nouveau message utilisateur trouvé. En attente...")
-            time.sleep(2)  # Attendre 2 secondes avant de revérifier
+            time.sleep(2)
             continue
 
         chat_id = last_message["chat_id"]
         user_message = last_message["content"]
-        message_id = last_message["id"]  # ID unique du message
+        message_id = last_message["id"]
 
-        # Vérifier si c'est un nouveau message (éviter de traiter deux fois le même)
-        if last_processed_message_id == message_id:
-            time.sleep(2)  # Attendre avant de vérifier à nouveau
+        if last_message["role"] != "user" or last_processed_message_id == message_id:
+            time.sleep(2)
             continue
 
-        # Vérifier si c'est bien un message utilisateur
-        if last_message["role"] != "user":
-            time.sleep(2)  # Attendre avant de vérifier à nouveau
-            continue
-
-        # Mettre à jour le dernier message traité
         last_processed_message_id = message_id
 
-        # Vérifier si l'utilisateur veut quitter
         if user_message.lower() in ["exit", "quit", "bye"]:
             print("👋 Chatbot arrêté.")
             break
 
-        # Charger l'historique du chat
-        history = get_chat_history(chat_id)
+        history = []  # Remplace la récupération d'historique si nécessaire
 
-        # Générer une réponse SANS RECHARGER LES EMBEDDINGS
-        response = chatbot({"question": user_message, "chat_history": history})
+        print(f"📝 Message utilisateur reçu : {user_message}")
+
+        response = chatbot.invoke({
+            "question": f"{user_message}. Cherche uniquement dans les résultats de courses de Formule 1.",
+            "chat_history": history
+        })
         bot_response = response["answer"]
-        print(f"🤖 {bot_response}")
 
-        # Sauvegarder la réponse dans Supabase
-        save_assistant_message(chat_id, bot_response)
+        print(f"🤖 Réponse générée : {bot_response}")
 
-        # Pause pour éviter une boucle trop rapide
+        supabase.table("message").insert({"chat_id": chat_id, "role": "assistant", "content": bot_response}).execute()
+
         time.sleep(2)
 
-
-
-
-# ✅ Exécuter le script
+# ✅ Exécuter le chatbot
 if __name__ == "__main__":
     process_chat()
