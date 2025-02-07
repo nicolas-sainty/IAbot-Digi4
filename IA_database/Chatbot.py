@@ -21,7 +21,7 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 # Vérification des clés essentielles
 if not SUPABASE_URL or not SUPABASE_KEY or not OPENAI_API_KEY:
-    raise ValueError("Vérifiez que SUPABASE_URL, SUPABASE_KEY et OPENAI_API_KEY sont bien définis dans votre fichier .env")
+    raise ValueError("❌ Vérifiez que SUPABASE_URL, SUPABASE_KEY et OPENAI_API_KEY sont bien définis dans votre fichier .env")
 
 # 📌 Initialiser Supabase et Embeddings
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -73,15 +73,20 @@ def regenerate_chromadb_embeddings():
 
     print(f"✅ {len(drivers)} pilotes mis à jour dans ChromaDB.")
 
-    # ✅ **Embeddings pour `results`**
+    # ✅ **Embeddings pour `results`** (AMÉLIORÉ)
     results = supabase.table("results").select("season", "circuit_id", "driver_id", "constructor_id", "grid", "position", "points", "status").execute().data
     collection_results = chromadb_client.get_or_create_collection(name="results")
 
     for result in results:
+        # Ajout du nom du pilote dans l'indexation
+        driver_info = supabase.table("drivers").select("first_name", "last_name").eq("driver_ref", result["driver_id"]).execute().data
+        driver_name = f"{driver_info[0]['first_name']} {driver_info[0]['last_name']}" if driver_info else result["driver_id"]
+
         embedding = embeddings_model.embed_query(
-            f"Résultat {result['season']} - Circuit {result['circuit_id']}: "
-            f"Pilote {result['driver_id']}, Écurie {result['constructor_id']}, "
-            f"Position {result['position']}, Points {result['points']}, Statut {result['status']}."
+            f"Saison {result['season']} - Circuit {result['circuit_id']}: "
+            f"Pilote {driver_name}, Écurie {result['constructor_id']}, "
+            f"Position sur la grille: {result['grid']}, Position finale: {result['position']}, "
+            f"Points marqués: {result['points']}, Statut: {result['status']}."
         )
         collection_results.add(
             ids=[f"{result['season']}_{result['circuit_id']}_{result['driver_id']}"],
@@ -91,6 +96,7 @@ def regenerate_chromadb_embeddings():
 
     print(f"✅ {len(results)} résultats mis à jour dans ChromaDB.")
     print("✅ Régénération des embeddings terminée !")
+
 
 
 # ✅ **Créer le chatbot LangChain**
@@ -137,11 +143,18 @@ def process_chat():
         if user_message.lower() in ["exit", "quit", "bye"]:
             print("👋 Chatbot arrêté.")
             break
-
+        test_chromadb_retrieval("Lewis Hamilton")
         print(f"📝 Message utilisateur reçu : {user_message}")
 
+        # 🔍 **Récupération des résultats pertinents via ChromaDB**
+        retriever = chatbot.retriever
+        retrieved_docs = retriever.get_relevant_documents(user_message)
+
+        # 📌 **Ajout du contexte des résultats récupérés**
+        context = "\n\n".join([doc.page_content for doc in retrieved_docs])
+
         response = chatbot.invoke({
-            "question": f"{user_message}. Cherche uniquement dans les résultats de courses de Formule 1.",
+            "question": f"Voici les résultats trouvés dans la base de données:\n\n{context}\n\nMaintenant, réponds à cette question : {user_message}",
             "chat_history": []
         })
         bot_response = response["answer"]
@@ -150,6 +163,21 @@ def process_chat():
         supabase.table("message").insert({"chat_id": chat_id, "role": "assistant", "content": bot_response}).execute()
 
         time.sleep(2)
+
+
+def test_chromadb_retrieval(driver_name):
+    """ Vérifie si les résultats d'un pilote sont bien récupérés dans ChromaDB. """
+    print(f"🔍 Test de récupération dans ChromaDB pour {driver_name}...")
+
+    retriever = Chroma(persist_directory=CHROMA_DB_PATH, embedding_function=embeddings_model).as_retriever()
+    retrieved_docs = retriever.get_relevant_documents(f"Résultats de {driver_name}")
+
+    if not retrieved_docs:
+        print(f"❌ Aucun résultat trouvé pour {driver_name} dans ChromaDB.")
+    else:
+        print(f"✅ {len(retrieved_docs)} résultats récupérés pour {driver_name}.")
+        for doc in retrieved_docs:
+            print(f"📜 {doc.page_content}")
 
 
 # ✅ **Exécuter le chatbot**
