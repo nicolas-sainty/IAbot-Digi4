@@ -39,16 +39,40 @@ args = parser.parse_args()
 
 # 🔄 **Supprimer et recréer les collections dans ChromaDB**
 def clear_chromadb():
-    """ Vide et recrée les collections ChromaDB pour results et drivers. """
+    """ Supprime et recrée les collections `results` et `drivers` dans ChromaDB. """
     print("⚠️ Suppression des anciennes données ChromaDB...")
-    
+
     for collection_name in ["results", "drivers"]:
         try:
-            collection = chromadb_client.get_or_create_collection(name=collection_name)
-            collection.delete(where={})  # Supprime tout le contenu
-            print(f"✅ Collection `{collection_name}` vidée avec succès.")
+            # Supprime directement la collection si elle existe
+            chromadb_client.delete_collection(name=collection_name)
+            print(f"✅ Collection `{collection_name}` supprimée.")
+
+            # Recrée une collection vide
+            chromadb_client.get_or_create_collection(name=collection_name)
+            print(f"✅ Collection `{collection_name}` recréée.")
+
         except Exception as e:
             print(f"❌ Erreur lors de la suppression de `{collection_name}` : {e}")
+
+
+def fetch_all_supabase_data(table_name, batch_size=1000):
+    """ Récupère toutes les données d'une table Supabase avec pagination. """
+    all_data = []
+    offset = 0
+
+    while True:
+        print(f"🔄 Chargement des données depuis `{table_name}` (offset {offset})...")
+        response = supabase.table(table_name).select("*").range(offset, offset + batch_size - 1).execute()
+        
+        if not response.data:
+            print(f"✅ Fin de la récupération pour `{table_name}`. {len(all_data)} entrées chargées.")
+            break  # Plus de données à récupérer
+
+        all_data.extend(response.data)
+        offset += batch_size  # Passer au batch suivant
+
+    return all_data
 
 
 # 🔄 **Générer les nouveaux embeddings et les stocker dans ChromaDB**
@@ -57,10 +81,12 @@ def regenerate_chromadb_embeddings():
     print("🔄 Régénération des embeddings pour `results` et `drivers`...")
 
     # ✅ **Embeddings pour `drivers`**
-    drivers = supabase.table("drivers").select("driver_ref", "first_name", "last_name", "dob", "nationality", "url").execute().data
+    drivers = fetch_all_supabase_data("drivers")
     collection_drivers = chromadb_client.get_or_create_collection(name="drivers")
 
     for driver in drivers:
+        driver = {k: (v if v is not None else "") for k, v in driver.items()}  # ⚠️ Remplace les `None`
+        
         embedding = embeddings_model.embed_query(
             f"Pilote {driver['first_name']} {driver['last_name']} ({driver['nationality']}). "
             f"Né le {driver['dob']}. Plus d'informations : {driver['url']}."
@@ -73,12 +99,13 @@ def regenerate_chromadb_embeddings():
 
     print(f"✅ {len(drivers)} pilotes mis à jour dans ChromaDB.")
 
-    # ✅ **Embeddings pour `results`** (AMÉLIORÉ)
-    results = supabase.table("results").select("season", "circuit_id", "driver_id", "constructor_id", "grid", "position", "points", "status").execute().data
+    # ✅ **Embeddings pour `results`**
+    results = fetch_all_supabase_data("results")
     collection_results = chromadb_client.get_or_create_collection(name="results")
 
     for result in results:
-        # Ajout du nom du pilote dans l'indexation
+        result = {k: (v if v is not None else "") for k, v in result.items()}  # ⚠️ Remplace les `None`
+        
         driver_info = supabase.table("drivers").select("first_name", "last_name").eq("driver_ref", result["driver_id"]).execute().data
         driver_name = f"{driver_info[0]['first_name']} {driver_info[0]['last_name']}" if driver_info else result["driver_id"]
 
@@ -98,14 +125,13 @@ def regenerate_chromadb_embeddings():
     print("✅ Régénération des embeddings terminée !")
 
 
-
 # ✅ **Créer le chatbot LangChain**
 def create_chatbot():
     """ Initialise le chatbot après rechargement des embeddings. """
     print("✅ Chatbot prêt à répondre !")
     vector_store = Chroma(persist_directory=CHROMA_DB_PATH, embedding_function=embeddings_model)
     return ConversationalRetrievalChain.from_llm(
-        llm=ChatOpenAI(temperature=0, model="gpt-3.5-turbo", openai_api_key=OPENAI_API_KEY),
+        llm=ChatOpenAI(temperature=0, model="gpt-4o-mini", openai_api_key=OPENAI_API_KEY),
         retriever=vector_store.as_retriever()
     )
 
