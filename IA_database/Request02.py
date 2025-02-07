@@ -124,9 +124,6 @@ def fetch_drivers(years):
             else:
                 print(f"⚠️ Aucun pilote récupéré pour {year}.")
 
-            # 🕒 Pause pour laisser Supabase valider l'ajout des pilotes
-            time.sleep(2)
-
             # 🔍 Vérifier si les pilotes sont bien en base
             existing_drivers = get_existing_drivers()
             missing_after_insert = [driver['driver_ref'] for driver in drivers if driver['driver_ref'] not in existing_drivers]
@@ -256,7 +253,6 @@ def fetch_results(years):
         if missing_drivers:
             print(f"⚠️ {len(missing_drivers)} pilotes manquants détectés. Ajout en cours...")
             fetch_drivers([year])
-            time.sleep(2)
 
             # 🔄 Vérification finale des pilotes après mise à jour
             existing_drivers = get_existing_drivers()
@@ -271,8 +267,6 @@ def fetch_results(years):
         # 🏁 Insérer tous les résultats avec vérification des pilotes
         batch_upsert("results", results, "season, circuit_id, driver_id")
 
-
-
 def batch_upsert(table, data, conflict_columns):
     """ Gère les upserts en batch pour éviter les doublons sur ON CONFLICT DO UPDATE """
     BATCH_SIZE = 1000
@@ -284,8 +278,6 @@ def batch_upsert(table, data, conflict_columns):
             print(f"✅ Batch {i+1}/{len(data)} inséré avec succès !")
         except Exception as e:
             print(f"❌ Erreur lors de l'update de {table} (Batch {i+1}/{len(data)}) : {e}")
-
-
 
 
 def regenerate_embeddings():
@@ -333,9 +325,6 @@ def regenerate_embeddings():
 
     print("✅ Régénération des embeddings terminée !")
 
-
-
-
 def get_years_to_fetch(force_update=False):
     if force_update:
         return list(range(1950, 2025)), list(range(1950, 2025)), list(range(1950, 2025))
@@ -346,7 +335,7 @@ def get_years_to_fetch(force_update=False):
 
     missing_driver_years = set(range(1950, 2025)) - existing_driver_years
     #missing_result_years = existing_driver_years - existing_result_years
-    missing_result_years = set(range(1950, 2025))
+    missing_result_years = set(range(1991, 2025))
     missing_constructor_years = set(range(1950, 2025)) - existing_constructor_years
 
     return sorted(missing_driver_years), sorted(missing_result_years), sorted(missing_constructor_years)

@@ -53,24 +53,28 @@ export default function ClientLayout({
               onClick={() => router.push('/')}
             >
               <Plus className="w-4 h-4" />
-              <span className="text-[14px] font-medium">Nouveau conversation</span>
+              <span className="text-[14px] font-medium">Nouvelle conversation</span>
             </button>
           </div>
  
           {/* Liste des conversations */}
           <div className="flex-1 overflow-y-auto mt-4 mx-3.5 space-y-1">
-            {/* Affiche les chats dans l'ordre inverse (plus récent en premier) */}
-            {[...chats].reverse().map((chat: any) => (
-              <div key={chat.id}>
-                <button
-                  onClick={() => router.push(`/chat/${chat.id}`)}
-                  className="w-full flex items-center rounded-lg p-2 text-[13px] hover:bg-gray-800 transition-colors"
-                >
-                  <span>{chat.title}</span>
-                </button>
-              </div>
-            ))}
-          </div>
+  {[...chats].reverse().map((chat: any) => (
+    <div key={chat.id}>
+      <button
+        onClick={() => router.push(`/chat/${chat.id}`)}
+        className="w-full flex items-center rounded-lg p-2 text-[13px] hover:bg-gray-800 transition-colors"
+        style={{
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+        }}
+      >
+        <span>{chat.title}</span>
+      </button>
+    </div>
+  ))}
+</div>
  
           {/* Categories en bas */}
           <div className="mt-auto border-t border-gray-700 pt-4 pb-[18px] space-y-1 mx-3.5">

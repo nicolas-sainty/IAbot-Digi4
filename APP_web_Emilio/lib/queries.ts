@@ -10,6 +10,27 @@ export async function getChats() {
   return data
 }
 
+// ✅ Récupère la dernière réponse stockée pour un message donné
+export async function getStoredResponse(chatId: string, userMessage: string) {
+  const { data, error } = await supabase
+    .from("message")
+    .select("content")
+    .eq("chat_id", chatId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .single();
+
+  if (error) {
+    console.error("❌ Erreur lors de la récupération du message:", error);
+    return null;
+  }
+
+  return data ? data.content : null;
+}
+
+
+
 export async function createChat(title: string) {
   const { data, error } = await supabase
     .from('chat')
