@@ -30,6 +30,64 @@ embeddings_model = OpenAIEmbeddings(openai_api_key=OPENAI_API_KEY)
 # 🔹 Variable globale pour stocker les embeddings et éviter le double chargement
 vector_store = None
 
+
+import chromadb
+
+def clear_chromadb():
+    """ Supprime toutes les anciennes données de ChromaDB. """
+    chromadb_client = chromadb.PersistentClient(path="./chromadb_f1")
+    
+    for collection_name in ["results", "drivers"]:
+        collection = chromadb_client.get_or_create_collection(name=collection_name)
+        collection.delete(where={})  # Supprime tout le contenu
+
+    print("✅ ChromaDB vidé des anciennes données.")
+
+
+def regenerate_chromadb_embeddings():
+    """ Génère les embeddings pour results et drivers, puis les stocke dans ChromaDB. """
+    print("🔄 Régénération des embeddings pour results et drivers...")
+
+    chromadb_client = chromadb.PersistentClient(path="./chromadb_f1")
+
+    # ✅ Embeddings pour `drivers`
+    drivers = supabase.table("drivers").select("driver_ref", "first_name", "last_name", "dob", "nationality", "url").execute().data
+    collection_drivers = chromadb_client.get_or_create_collection(name="drivers")
+
+    for driver in drivers:
+        embedding = embeddings_model.embed_query(
+            f"Pilote {driver['first_name']} {driver['last_name']} ({driver['nationality']}). "
+            f"Né le {driver['dob']}. Plus d'informations : {driver['url']}."
+        )
+        collection_drivers.add(
+            ids=[driver["driver_ref"]],
+            embeddings=[embedding],
+            metadatas=[driver]
+        )
+
+    print(f"✅ {len(drivers)} pilotes mis à jour dans ChromaDB.")
+
+    # ✅ Embeddings pour `results`
+    results = supabase.table("results").select("season", "circuit_id", "driver_id", "constructor_id", "grid", "position", "points", "status").execute().data
+    collection_results = chromadb_client.get_or_create_collection(name="results")
+
+    for result in results:
+        embedding = embeddings_model.embed_query(
+            f"Résultat {result['season']} - Circuit {result['circuit_id']}: "
+            f"Pilote {result['driver_id']}, Écurie {result['constructor_id']}, "
+            f"Position {result['position']}, Points {result['points']}, Statut {result['status']}."
+        )
+        collection_results.add(
+            ids=[f"{result['season']}_{result['circuit_id']}_{result['driver_id']}"],
+            embeddings=[embedding],
+            metadatas=[result]
+        )
+
+    print(f"✅ {len(results)} résultats mis à jour dans ChromaDB.")
+
+    print("✅ Régénération des embeddings terminée !")
+
+
 # ✅ Fonction pour récupérer les embeddings de Supabase avec pagination
 def get_all_embeddings():
     all_embeddings = []
@@ -75,34 +133,6 @@ def get_all_embeddings():
     print(f"✅ {len(all_embeddings)} embeddings récupérés depuis Supabase.")
     return all_embeddings, all_texts, all_metadata
 
-# ✅ Charger les embeddings dans Chroma UNE SEULE FOIS
-def load_embeddings_into_chroma():
-    global vector_store
-
-    if vector_store is not None:
-        print("✅ Les embeddings sont déjà chargés, pas de rechargement nécessaire.")
-        return vector_store
-
-    embeddings, texts, metadata = get_all_embeddings()
-    if not embeddings:
-        print("❌ Aucun embedding trouvé, arrêt du chargement.")
-        return None
-
-    vector_store = Chroma(persist_directory="./chroma_db", embedding_function=embeddings_model)
-    vector_store.add_texts(texts=texts, metadatas=metadata, embeddings=embeddings)
-
-    print("✅ Embeddings chargés dans Chroma avec succès !")
-    return vector_store
-
-# ✅ Debug : Vérifier les collections dans ChromaDB
-def debug_chroma_collections():
-    global vector_store
-    if vector_store is None:
-        vector_store = load_embeddings_into_chroma()
-
-    collections = vector_store._client.list_collections()
-    print("✅ Collections disponibles dans ChromaDB :", collections)
-
 # ✅ Debug : Vérifier les résultats en course
 def debug_results_search():
     print("🔍 Recherche des résultats de course dans ChromaDB...")
@@ -115,16 +145,24 @@ def debug_results_search():
             print(f"📜 Résultat {i+1}: {res.page_content} - Metadata: {res.metadata}")
 
 
-# ✅ Créer le chatbot LangChain
 def create_chatbot():
-    global vector_store
-    vector_store = load_embeddings_into_chroma()
-
     print("✅ Chatbot prêt à répondre !")
+    chromadb_client = chromadb.PersistentClient(path="./chromadb_f1")
+    vector_store = Chroma(persist_directory="./chromadb_f1", embedding_function=embeddings_model)
     return ConversationalRetrievalChain.from_llm(
         llm=ChatOpenAI(temperature=0, model="gpt-3.5-turbo", openai_api_key=OPENAI_API_KEY),
         retriever=vector_store.as_retriever()
     )
+
+def get_race_results(season, driver_id=None):
+    """ Récupère les résultats pour une saison donnée et un pilote (optionnel). """
+    query = supabase.table("results").select("*").eq("season", season)
+    
+    if driver_id:
+        query = query.eq("driver_id", driver_id)
+    
+    response = query.execute()
+    return response.data
 
 # ✅ Récupérer le dernier message utilisateur
 def get_last_user_message():
@@ -133,22 +171,13 @@ def get_last_user_message():
 
 # ✅ Fonction principale du chatbot
 def process_chat():
-    print("💬 Chatbot en attente de messages... (tape 'exit' pour quitter)\n")
-
-    global vector_store
-    if vector_store is None:
-        vector_store = load_embeddings_into_chroma()
-
+    print("💬 Chatbot en attente de messages... (tape 'exit' pour quitter)")
     chatbot = create_chatbot()
-
     last_processed_message_id = None
-    debug_chroma_collections()
-    debug_results_search()
 
     while True:
         last_message = get_last_user_message()
         if not last_message:
-            print("⚠️ Aucun nouveau message utilisateur trouvé. En attente...")
             time.sleep(2)
             continue
 
@@ -156,31 +185,29 @@ def process_chat():
         user_message = last_message["content"]
         message_id = last_message["id"]
 
-        if last_message["role"] != "user" or last_processed_message_id == message_id:
+        if last_processed_message_id == message_id:
             time.sleep(2)
             continue
-
+        
         last_processed_message_id = message_id
 
         if user_message.lower() in ["exit", "quit", "bye"]:
             print("👋 Chatbot arrêté.")
             break
 
-        history = []  # Remplace la récupération d'historique si nécessaire
-
         print(f"📝 Message utilisateur reçu : {user_message}")
 
         response = chatbot.invoke({
             "question": f"{user_message}. Cherche uniquement dans les résultats de courses de Formule 1.",
-            "chat_history": history
+            "chat_history": []
         })
         bot_response = response["answer"]
 
         print(f"🤖 Réponse générée : {bot_response}")
-
         supabase.table("message").insert({"chat_id": chat_id, "role": "assistant", "content": bot_response}).execute()
 
         time.sleep(2)
+
 
 # ✅ Exécuter le chatbot
 if __name__ == "__main__":
